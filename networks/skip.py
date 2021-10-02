@@ -2,10 +2,45 @@
 This file generate the encoder-decoder with skip connection structure
 @ Hieu Le Xuan, 2021
 """
+from utils import layers
+from utils import non_local_dot_product as block
 import torch.nn as nn
 import torch
-from code.SelfDeblur.networks.common import act
-from utils import layers
+from utils.act import act_func as act
+import numpy as np
+
+
+class Concat(nn.Module):
+    def __init__(self, dim, *args):
+        super(Concat, self).__init__()
+        self.dim = dim
+
+        for idx, module in enumerate(args):
+            self.add_module(str(idx), module)
+
+    def forward(self, input):
+        inputs = []
+        for module in self._modules.values():
+            inputs.append(module(input))
+
+        inputs_shapes2 = [x.shape[2] for x in inputs]
+        inputs_shapes3 = [x.shape[3] for x in inputs]
+
+        if np.all(np.array(inputs_shapes2) == min(inputs_shapes2)) and np.all(
+                np.array(inputs_shapes3) == min(inputs_shapes3)):
+            inputs_ = inputs
+        else:
+            target_shape2 = min(inputs_shapes2)
+            target_shape3 = min(inputs_shapes3)
+
+            inputs_ = []
+            for inp in inputs:
+                diff2 = (inp.size(2) - target_shape2) // 2
+                diff3 = (inp.size(3) - target_shape3) // 2
+                inputs_.append(inp[:, :, diff2:diff2 + target_shape2,
+                                   diff3:diff3 + target_shape3])
+
+        return torch.cat(inputs_, dim=self.dim)
 
 
 class Skip(nn.Module):
@@ -62,9 +97,9 @@ class Skip(nn.Module):
         downsampler = None
         # convolution module to decrease channels
         ## padding size for conv2d
-        to_pad = (filter_skip_size - 1) / 2
+        to_pad = int((filter_skip_size - 1) / 2)
         ## choosing path method : zero or flection
-        if pad == "Reflection":
+        if pad == "reflection":
             padder = nn.ReflectionPad2d(to_pad)
             to_pad = 0
         ## constructing conv2d
@@ -84,34 +119,26 @@ class Skip(nn.Module):
 
         # adding bn and activation
         skip.add_module("Skip_BN", nn.BatchNorm2d(num_channels_skip))
-        skip.add_module("Leaky_RELU", layers.act(act_fun="LeakyReLU"))
+        skip.add_module("Leaky_RELU", act(act_fun="LeakyReLU"))
 
         return skip
 
-    def deeper_before_concat(
-        self,
-        in_channels,
-        num_channels_down,
-        filter_down_size,
-        stride,
-        pad,
-        downsampler,
-        bias,
-        act_fun,
-    ):
+    def deeper_before_concat(self, in_channels, num_channels_down,
+                             filter_down_size, stride, pad, downsampler, bias,
+                             act_fun, non_local):
         """
         con_block -> bn -> leaky relu -> nonlocal2D block ->...
         purpose : reduce spatial dimension while increasing depth / num of channels
 
         """
         before_concat = []
-        ## append conv
+        ## append conv : first block stride = 2 to reduce spatial dimensions
         before_concat.append(
             layers.conv(
                 in_channels,
                 num_channels_down,
                 filter_down_size,
-                stride=stride,
+                stride=2,
                 bias=bias,
                 pad=pad,
                 downsample_mode=downsampler,
@@ -119,8 +146,10 @@ class Skip(nn.Module):
 
         before_concat.append(nn.BatchNorm2d(num_channels_down))
         before_concat.append(layers.act(act_fun))
-        before_concat.append(
-            layers.NONLocalBlock2D(in_channels=num_channels_down))
+        if (non_local):
+            before_concat.append(
+                block.NONLocalBlock2D(in_channels=num_channels_down))
+
         before_concat.append(
             layers.conv(
                 num_channels_down,
@@ -130,8 +159,8 @@ class Skip(nn.Module):
                 pad=pad,
             ))
         before_concat.append(nn.BatchNorm2d(num_channels_down))
-        before_concat.append(layers.act(act_fun))
-        return before_concat
+        before_concat.append(act(act_fun))
+        return nn.Sequential(*before_concat)
 
     def construct(self):
         # self.model = nn.Sequential()
@@ -139,49 +168,80 @@ class Skip(nn.Module):
         depth = len(self.num_channels_down)
         # useful for debug later
         assert len(self.num_channels_up) == len(self.num_channels_down)
-        assert len(self.num_channels_down == self.num_channels_skip)
-        assert len(self.num_channels_down > 0)
+        assert len(self.num_channels_down) == len(self.num_channels_skip)
+        assert len(self.num_channels_down) > 0
         ### build a unet like module
-        encoder = []
-        skip = []
+        encoder = [None] * depth
+        skip = [None] * depth
+        post = [None] * depth
         decoder = [None] * depth
+        non_local = False
         ### create module
         for i in range(depth):
             if (i == 0):
                 in_channels = self.num_input_channels
+                non_local = False
             else:
                 in_channels = self.num_channels_down[i - 1]
-            encoder[i] = self.deeper_before_concat(in_channels,
-                                                   self.num_channels_down[i],
-                                                   self.filter_down_size[i],
-                                                   self.stride, self.pad,
-                                                   self.downsampler, self.bias,
-                                                   self.act_fun)
+                if (i > 1):
+                    non_local = True
+            encoder[i] = self.deeper_before_concat(
+                in_channels, self.num_channels_down[i], self.filter_size_down,
+                1, self.pad, self.downsample_mode, self.need_bias,
+                self.act_fun, non_local)
             skip[i] = self.single_skip(in_channels, self.num_channels_skip[i],
-                                       self.filter_skip_size[i], self.pad,
-                                       self.bias)
+                                       self.filter_skip_size, self.pad,
+                                       self.need_bias)
+            post[i] = self.post_processing(
+                self.num_channels_down[i] + self.num_channels_skip[i],
+                self.num_channels_up[i], self.filter_size_up)
             # decoder[i] = nn.Sequential(torch.cat(skip[5-i],))
-        return encoder, skip
+
+        return encoder, skip, post
+
+    def post_processing(self, input_channel, output_channel, kernel_size):
+        """
+        return post_processing layers
+        input channel : num of channels for coming input
+        output channel: desired number of channels
+        """
+        bn = []
+        bn.append(nn.BatchNorm2d(input_channel))
+        bn.append(
+            layers.conv(input_channel,
+                        output_channel,
+                        kernel_size,
+                        bias=self.need_bias,
+                        pad=self.pad))
+        bn.append(nn.BatchNorm2d(output_channel))
+        bn.append(act(self.act_fun))
+        bn.append(
+            layers.conv(output_channel,
+                        output_channel,
+                        1,
+                        bias=self.need_bias,
+                        pad=self.pad))
+        bn.append(nn.BatchNorm2d(output_channel))
+        bn.append(act(self.act_fun))
+        return bn
+
+    def model_tail(self):
+        """
+        construct the tail of model
+        """
+        tail = []
+        input_channel = self.num_channels_up[0]
+        output_channel = self.num_output_channels
+        kernel_size = 1
+
+        tail.append(
+            layers.conv(input_channel,
+                        output_channel,
+                        kernel_size,
+                        bias=self.need_bias,
+                        pad=self.pad))
+        tail.append(nn.Sigmoid())
+        return tail
 
     def forward(self, input):
         return None
-
-    
-demo =  skip(num_input_channels=2,
-        num_output_channels=3,
-        num_channels_down=[16, 32, 64, 128, 128],
-        num_channels_up=[16, 32, 64, 128, 128],
-        num_channels_skip=[4, 4, 4, 4, 4],
-        filter_size_down=3,
-        filter_size_up=3,
-        filter_skip_size=1,
-        need_sigmoid=True,
-        need_bias=True,
-        pad="zero",
-        upsample_mode="nearest",
-        downsample_mode="stride",
-        act_fun="LeakyReLU",
-        need1x1_up=True)
-
-e,s = demo.construct
-print(len(e))
