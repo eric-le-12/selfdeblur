@@ -43,3 +43,14 @@ def ssim_loss(x, y, gaussian_window, window_size=11):
                                                        sigma_x_y_sq + const2)
     ssim = (numerator / denominator).mean()
     return 1 - ssim
+
+
+def generate_input(shape, scale, type):
+    """Generate input tensor of size shape, which is then multiplied by a scale_factor
+    type can be either normal or uniform
+    """
+    if type == "uniform":
+        return torch.randn(shape).uniform_() * scale
+    else:
+        # normal
+        return torch.randn(shape) * scale
