@@ -18,7 +18,7 @@ def train_one_image(model_x, model_k, kernel_size, epochs, optimizer,scheduler, 
         data_x_new = data_x.detach().clone() + 0.001*torch.zeros(data_x.shape).type_as(data_x.data).normal_()
         data_x_new = data_x_new.to(device)
         # clear-the-gradients-of-all-optimized-variables
-        scheduler.step(epoch)
+#         scheduler.step(epoch)
         optimizer.zero_grad()
         # forward-pass: compute-predicted-outputs-by-passing-inputs-to-the-model
         output_x = model_x(data_x_new)

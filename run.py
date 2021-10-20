@@ -123,7 +123,7 @@ list_imgs.sort()
 for f in list_imgs:
     if (f==".ipynb_checkpoints"):
         continue
-    epochs = 1500    
+    epochs = 1000    
     imgname = f
     # set predefined kernels
     if imgname.find('kernel1') != -1:
