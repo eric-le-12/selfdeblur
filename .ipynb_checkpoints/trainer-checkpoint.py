@@ -6,12 +6,17 @@ import timeit
 import torch.nn as nn
 import torch
 from torch.optim.lr_scheduler import MultiStepLR
+from utils import utils
+import numpy as np
 
+def max_range(img):
+    print (np.amax(img.reshape((img.shape[2]*img.shape[3], 1)),axis=0))
+    
 def train_one_image(model_x, model_k, kernel_size, epochs, optimizer,scheduler, criterion,
                     target, device, data_x, data_k):
     # training-the-model
     train_loss = 0
-    print('*****************************')
+#     print('*************WITH TV****************')
     crit = nn.MSELoss()
     for _,epoch in tqdm(enumerate(range(epochs))):
         # varying input by adding a random noise vector every iteration
@@ -30,7 +35,11 @@ def train_one_image(model_x, model_k, kernel_size, epochs, optimizer,scheduler, 
         # re-constructed deblurred image        
         deblured = F.conv2d(output_x, output_k, padding=0, bias=None)
         # calculate-the-batch-loss
-        loss =  (max(0,(epoch-1000)))*criterion(deblured, target,device) + crit(deblured.to(device), target.to(device))
+        switch_loss_epoch = 5000
+        slope = np.clip(np.array([epoch-switch_loss_epoch]),0,1)[0]
+        slope_mse = np.clip(np.array([-epoch+switch_loss_epoch]),0,1)[0]
+        loss =  slope*criterion(deblured, target,device) + slope_mse*crit(deblured.to(device), target.to(device)) + 0.000001*utils.tv_loss(output_x)
+        #+ 0.000001*utils.tv_loss(output_x)
         # backward-pass: compute-gradient-of-the-loss-wrt-model-parameters
         loss.backward()
         # perform-a-ingle-optimization-step (parameter-update)

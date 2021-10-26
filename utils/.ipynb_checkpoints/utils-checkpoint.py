@@ -59,3 +59,15 @@ def generate_input(shape, scale=0.1, ntype="uniform"):
     else:
         # normal
         return torch.zeros(shape).normal_() * scale
+
+def tv_loss(c):
+    # get difference between horizontal pixels
+    x = c[:,:,1:,:] - c[:,:,:-1,:]
+    # different between vertical pixels
+    y = c[:,:,:,1:] - c[:,:,:,:-1]
+    # for normalization
+    x = x/255
+    y = y/255
+    # calculate loss
+    loss = torch.sum(torch.abs(x)) + torch.sum(torch.abs(y))
+    return loss

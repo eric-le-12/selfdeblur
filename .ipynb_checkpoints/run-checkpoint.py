@@ -116,85 +116,118 @@ def my_unet():
 
 # beginning running...
 ### get a list of files for levin_data_set
-PATH = "../levin_set/groundtruth"
-list_imgs = os.listdir(PATH)
-list_imgs.sort()
-# start #image
-for f in list_imgs:
-    if (f==".ipynb_checkpoints"):
-        continue
-    epochs = 1000    
-    imgname = f
-    # set predefined kernels
-    if imgname.find('kernel1') != -1:
-        kernel_size = [17, 17]
-    if imgname.find('kernel2') != -1:
-        kernel_size = [15, 15]
-    if imgname.find('kernel3') != -1:
-        kernel_size = [13, 13]
-    if imgname.find('kernel4') != -1:
-        kernel_size = [27, 27]
-    if imgname.find('kernel5') != -1:
-        kernel_size = [11, 11]
-    if imgname.find('kernel6') != -1:
-        kernel_size = [19, 19]
-    if imgname.find('kernel7') != -1:
-        kernel_size = [21, 21]
-    if imgname.find('kernel8') != -1:
-        kernel_size = [21, 21]
-    
-    # set up device
-    # read in every image
-    device = torch.device("cuda:0")
-    im = Image.open(os.path.join(PATH,f))
-    # convert from PIL to numpy
-    pic = np.asarray(im)
-    # convert from integers to floats
-    pic = pic.astype('float32')
-    # normalize to the range 0-1
-    pic /= 255.0
-    # target is the result of blur_kernel * latent_image
-    im = torch.from_numpy(pic).unsqueeze(0)
-    target = im.to(device)
-    target = target.unsqueeze(0)
-    img_size = list(im.shape)
-    print(imgname)
-    ## estimate padding so that when convolution with a kernel of shape kernel_size
-    ## it will result in an image of same initial shape
-    padh = kernel_size[0]-1
-    padw = kernel_size[1]-1
-    ## padding image size calculation
-    img_size[0] = img_size[1] + padw
-    img_size[1] = img_size[2] + padh
-    
-    ## generate noise vectors and corresponding model
-    ### generate the unet architecture
-    model_x = my_unet()
-    model_x = model_x.to(device)
-    ### generate kernel neural network estimation
-    model_k = my_fcn.kernel_approximation(200, kernel_size[0]*kernel_size[1]).create_model()
-    model_k = model_k.to(device)
-    ### generate a uniform vector of shape 1,8,img_width,img_height
-    data_x = my_utils.generate_input((1,8, img_size[0], img_size[1])).to(device)
-    ### generate vector of size 200 for kernel estimation
-    data_k = my_utils.generate_input((200)).to(device)
-    print("k shape: ",data_k.shape)
-    
-    # optimizer and scheduler
-    optimizer = torch.optim.Adam([{'params':model_x.parameters()},{'params':model_k.parameters(),'lr':1e-4}], lr=0.01)
-    scheduler = MultiStepLR(optimizer, milestones=[2000, 3000, 4000], gamma=0.5)  # learning rates
-    
-    # Losses
-    
-    mse = torch.nn.MSELoss().to(device)
-    criterion = my_utils.ssim_loss
+def run(path_to_blur,path_to_save,epochs):
+    PATH = path_to_blur
+    list_imgs = os.listdir(PATH)
+    list_imgs.sort()
+    # start #image
+    for f in list_imgs:
+        if (f==".ipynb_checkpoints"):
+            continue
+        imgname = f
+        new_img_name = imgname.split(".")[0] + "_x."+imgname.split(".")[1]
+        
+        name_to_save = os.path.join(path_to_save,new_img_name)
+        print(name_to_save)
+        print(epochs)
+        if os.path.isfile(name_to_save):
+            print("file exist... move to next")
+            continue
 
-    loss, output_x = train_one_image(model_x, model_k, kernel_size, epochs, optimizer,scheduler, criterion,
-                    target, device, data_x, data_k)
-    
-    ## post-processing for saving image
-    ### convert to numpy and delete first dimension
-    output_x = output_x.detach().cpu().numpy()
-    output_x = np.squeeze(output_x,0)
-    output_x = np.moveaxis(output_x,0,2)
-    imsave("./result_levin/"+imgname,output_x)
+        # set predefined kernels
+        if imgname.find('kernel1') != -1:
+            kernel_size = [17, 17]
+        if imgname.find('kernel2') != -1:
+            kernel_size = [15, 15]
+        if imgname.find('kernel3') != -1:
+            kernel_size = [13, 13]
+        if imgname.find('kernel4') != -1:
+            kernel_size = [27, 27]
+        if imgname.find('kernel5') != -1:
+            kernel_size = [11, 11]
+        if imgname.find('kernel6') != -1:
+            kernel_size = [19, 19]
+        if imgname.find('kernel7') != -1:
+            kernel_size = [21, 21]
+        if imgname.find('kernel8') != -1:
+            kernel_size = [21, 21]
+        if imgname.find('kernel_01') != -1:
+            kernel_size = [31, 31]
+        if imgname.find('kernel_02') != -1:
+            kernel_size = [51, 51]
+        if imgname.find('kernel_03') != -1:
+            kernel_size = [55, 55]
+        if imgname.find('kernel_04') != -1:
+            kernel_size = [75, 75]
+
+        # set up device
+        # read in every image
+        device = torch.device("cuda:0")
+        im = Image.open(os.path.join(PATH,f))
+        # convert from PIL to numpy
+        pic = np.asarray(im)
+        # convert from integers to floats
+        pic = pic.astype('float32')
+        # normalize to the range 0-1
+        pic /= 255.0
+        # target is the result of blur_kernel * latent_image
+        im = torch.from_numpy(pic).unsqueeze(0)
+        target = im.to(device)
+        target = target.unsqueeze(0)
+        img_size = list(im.shape)
+        original_size = list(im.shape)
+        print(imgname)
+        ## estimate padding so that when convolution with a kernel of shape kernel_size
+        ## it will result in an image of same initial shape
+        padh = kernel_size[0]-1
+        padw = kernel_size[1]-1
+        ## padding image size calculation
+        img_size[0] = img_size[1] + padh
+        img_size[1] = img_size[2] + padw
+
+        ## generate noise vectors and corresponding model
+        ### generate the unet architecture
+        model_x = my_unet()
+        model_x = model_x.to(device)
+        ### generate kernel neural network estimation
+        model_k = my_fcn.kernel_approximation(200, kernel_size[0]*kernel_size[1]).create_model()
+        model_k = model_k.to(device)
+        ### generate a uniform vector of shape 1,8,img_width,img_height
+        data_x = my_utils.generate_input((1,8, img_size[0], img_size[1])).to(device)
+        ### generate vector of size 200 for kernel estimation
+        data_k = my_utils.generate_input((200)).to(device)
+        print("k shape: ",data_k.shape)
+
+        # optimizer and scheduler
+        optimizer = torch.optim.Adam([{'params':model_x.parameters()},{'params':model_k.parameters(),'lr':1e-4}], lr=0.01)
+        scheduler = MultiStepLR(optimizer, milestones=[2000, 3000, 4000], gamma=0.5)  # learning rates
+
+        # Losses
+
+        mse = torch.nn.MSELoss().to(device)
+        criterion = my_utils.ssim_loss
+
+        loss, output_x = train_one_image(model_x, model_k, kernel_size, epochs, optimizer,scheduler, criterion,
+                        target, device, data_x, data_k)
+
+        ## post-processing for saving image
+        ### convert to numpy and delete first dimension
+        output_x = output_x.detach().cpu().numpy()
+        output_x = np.squeeze(output_x,0)
+        output_x = np.moveaxis(output_x,0,2)
+        output_x = output_x[padh//2:((padh//2)+original_size[1]), padw//2:((padw//2)+original_size[2])]
+        imsave(name_to_save,output_x)
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--path_to_blur", type=str, default="../levin_set/blur", help='path to folder containing blur images')
+    parser.add_argument("--path_to_save", type=str, default="../levin_set/result", help='path to folder for saving')
+    parser.add_argument("--epoch", type=int, default=1000, help='number of epochs')
+    args = parser.parse_args()
+    epoch_folder = "tv_mse_"+str(args.epoch)
+    run(args.path_to_blur,os.path.join(args.path_to_save,epoch_folder),args.epoch)
+    epoch_folder = "tv_mse_"+str(args.epoch+1000)
+    run(args.path_to_blur,os.path.join(args.path_to_save,epoch_folder),args.epoch+1000)
+    epoch_folder = "tv_mse_"+str(args.epoch+2000)
+    run(args.path_to_blur,os.path.join(args.path_to_save,epoch_folder),args.epoch+2000)
