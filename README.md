@@ -56,7 +56,7 @@ Author repo : https://github.com/csdwren/SelfDeblur
 
 # What is different? (Between our implementation and author's implementation)
 
-- Loss function : The author did not implement Total variation loss
+- Loss function : We provided TV loss regularization The author did not implement Total variation loss
 
 - Modularity: The architecture of the Encoder-Decoder model of our implementation is splited into 3 modules for every layer at depth i: skip block, encoder block and the post-processing block. While the author simple implemeted them in a very complicated loop - what we found uncomfortable
 
