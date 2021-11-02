@@ -7,122 +7,81 @@ def add_module(self, module):
     
 torch.nn.Module.add = add_module
 
-class Concat(nn.Module):
-    def __init__(self, dim, *args):
-        super(Concat, self).__init__()
-        self.dim = dim
-
-        for idx, module in enumerate(args):
-            self.add_module(str(idx), module)
-
-    def forward(self, input):
-        inputs = []
-        for module in self._modules.values():
-            inputs.append(module(input))
-
-        inputs_shapes2 = [x.shape[2] for x in inputs]
-        inputs_shapes3 = [x.shape[3] for x in inputs]        
-
-        if np.all(np.array(inputs_shapes2) == min(inputs_shapes2)) and np.all(np.array(inputs_shapes3) == min(inputs_shapes3)):
-            inputs_ = inputs
-        else:
-            target_shape2 = min(inputs_shapes2)
-            target_shape3 = min(inputs_shapes3)
-
-            inputs_ = []
-            for inp in inputs: 
-                diff2 = (inp.size(2) - target_shape2) // 2 
-                diff3 = (inp.size(3) - target_shape3) // 2 
-                inputs_.append(inp[:, :, diff2: diff2 + target_shape2, diff3:diff3 + target_shape3])
-
-        return torch.cat(inputs_, dim=self.dim)
-
-    def __len__(self):
-        return len(self._modules)
-
-
-class GenNoise(nn.Module):
-    def __init__(self, dim2):
-        super(GenNoise, self).__init__()
-        self.dim2 = dim2
-
-    def forward(self, input):
-        a = list(input.size())
-        a[1] = self.dim2
-        # print (input.data.type())
-
-        b = torch.zeros(a).type_as(input.data)
-        b.normal_()
-
-        x = torch.autograd.Variable(b)
-
-        return x
-
-
-class Swish(nn.Module):
-    """
-        https://arxiv.org/abs/1710.05941
-        The hype was so huge that I could not help but try it
-        Needs paraphrase
-    """
-    def __init__(self):
-        super(Swish, self).__init__()
-        self.s = nn.Sigmoid()
-
-    def forward(self, x):
-        return x * self.s(x)
-
-
-def act(act_fun = 'LeakyReLU'):
-    '''
-        Either string defining an activation function or module (e.g. nn.ReLU)
-    '''
-    if isinstance(act_fun, str):
-        if act_fun == 'LeakyReLU':
-            return nn.LeakyReLU(0.2, inplace=True)
-        elif act_fun == 'Swish':
-            return Swish()
-        elif act_fun == 'ELU':
-            return nn.ELU()
-        elif act_fun == 'none':
-            return nn.Sequential()
-        else:
-            assert False
-    else:
-        return act_fun()
-
-
-def bn(num_features):
-    return nn.BatchNorm2d(num_features)
-
 
 def conv(in_f, out_f, kernel_size, stride=1, bias=True, pad='zero', downsample_mode='stride'):
     """
     need paraphrase
     
     """
-    downsampler = None
-    if stride != 1 and downsample_mode != 'stride':
+    # size to pad
+    pad_size = int((kernel_size - 1) / 2)
+    padder = nn.ReflectionPad2d(pad_size)
+    # create a convol layer
+    convol = nn.Conv2d(in_f, out_f, kernel_size, stride, padding=0, bias=bias)
+    
+    return nn.Sequential(padder,convol)
 
-        if downsample_mode == 'avg':
-            downsampler = nn.AvgPool2d(stride, stride)
-        elif downsample_mode == 'max':
-            downsampler = nn.MaxPool2d(stride, stride)
-        elif downsample_mode  in ['lanczos2', 'lanczos3']:
-            downsampler = Downsampler(n_planes=out_f, factor=stride, kernel_type=downsample_mode, phase=0.5, preserve_size=True)
-        else:
-            assert False
 
-        stride = 1
+class NonLocalBlock(nn.Module):
+    """
+    a block contains convolution and batchnorm layer AND max_pooling
+    """
+    def __init__(self, in_channels, inter_channels=None, dimension=2, sub_sample=True, bn_layer=True):
+        super(NonLocalBlock, self).__init__()
 
-    padder = None
-    to_pad = int((kernel_size - 1) / 2)
-    if pad == 'reflection':
-        padder = nn.ReflectionPad2d(to_pad)
-        to_pad = 0
+        self.in_channels = in_channels
+        self.inter_channels = max(in_channels // 2,1)
+        conv = nn.Conv2d
+        maxpool = nn.MaxPool2d(kernel_size=(2, 2))
+        bn = nn.BatchNorm2d
+        # declar the conv blocks
+        self.conv1 = nn.Sequential(conv(in_channels=self.in_channels, out_channels=self.inter_channels,
+                         kernel_size=1, stride=1, padding=0),maxpool)
+
+    
+        self.conv3 = nn.Sequential(
+                conv(in_channels=self.inter_channels, out_channels=self.in_channels,
+                        kernel_size=1, stride=1, padding=0),
+                bn(self.in_channels)
+            )
+        
+        ## init this layer
+        nn.init.constant_(self.conv3[1].weight, 0)
+        nn.init.constant_(self.conv3[1].bias, 0)
   
-    convolver = nn.Conv2d(in_f, out_f, kernel_size, stride, padding=to_pad, bias=bias)
 
+        self.conv2_1 = conv(in_channels=self.in_channels, out_channels=self.inter_channels,
+                             kernel_size=1, stride=1, padding=0)
 
-    layers = filter(lambda x: x is not None, [padder, convolver, downsampler])
-    return nn.Sequential(*layers)
+        self.conv2_2 = nn.Sequential(conv(in_channels=self.in_channels, out_channels=self.inter_channels,
+                           kernel_size=1, stride=1, padding=0),maxpool)
+
+    def forward(self, input):
+        '''
+        :param x: (b, c, t, h, w)
+        :return:
+        '''
+        ## get batch size
+        batch_size = input.size(0)
+        ### pass through first conv
+        conv1 = self.conv1(input)
+        conv1 = conv1.view(batch_size, self.inter_channels, -1)
+        ### make channel last dim
+        conv1 = conv1.permute(0, 2, 1)
+
+        conv2_1 = self.conv2_1(input).view(batch_size, self.inter_channels, -1)
+        conv2_1 = conv2_1.permute(0, 2, 1)
+        conv2_2 = self.conv2_2(input).view(batch_size, self.inter_channels, -1)
+        ## multiplication of conv2_1 and conv2_2
+        f = torch.matmul(conv2_1, conv2_2)
+        N = f.size(-1)
+        # norm by number of channels
+        f_normed = f / N
+
+        y = torch.matmul(f_normed, conv1)
+        y = y.permute(0, 2, 1).contiguous()
+        y = y.view(batch_size, self.inter_channels, *input.size()[2:])
+        out = self.conv3(y)
+        output = out + input
+
+        return output

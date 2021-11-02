@@ -22,41 +22,36 @@ from trainer import train_one_image
 from network import skip as sk
 
 
-class ConcatLayer(nn.Module):
-    def __init__(self, *list_module):
-        super(ConcatLayer, self).__init__()
-        ## add module
-        for idx, module in enumerate(list_module):
+class Concat(nn.Module):
+    def __init__(self, dim, *args):
+        super(Concat, self).__init__()
+        self.dim = dim
+
+        for idx, module in enumerate(args):
             self.add_module(str(idx), module)
-            
+
     def forward(self, input):
-        ## output for each module
-        output = []
+        inputs = []
         for module in self._modules.values():
-            output.append(module(input))
+            inputs.append(module(input))
 
-        output_shape_2 = [x.shape[2] for x in output]
-        output_shape_3 = [x.shape[3] for x in output]
+        inputs_shapes2 = [x.shape[2] for x in inputs]
+        inputs_shapes3 = [x.shape[3] for x in inputs]        
 
-        ### check if all width and height are the same => no problem just cat
-        min_shape_2 = min(output_shape_2)
-        min_shape_3 = min(output_shape_3)
-
-        if np.all(np.array(output_shape_2) == min_shape_2) and np.all(np.array(output_shape_3) == min_shape_3):
-            result = output
-
+        if np.all(np.array(inputs_shapes2) == min(inputs_shapes2)) and np.all(np.array(inputs_shapes3) == min(inputs_shapes3)):
+            inputs_ = inputs
         else:
-            result = []
-            ## shape no match
-            #### get equal center of each feature map
-            for out in output: 
-                begin_height = (out.size(2) - min_shape_2) // 2 
-                begin_width = (out.size(3) - min_shape_3) // 2 
-                result.append(out[:, :, begin_height: begin_height + min_shape_2, begin_width:begin_width + min_shape_3])
-        return torch.cat(result, dim=1)
-            
+            target_shape2 = min(inputs_shapes2)
+            target_shape3 = min(inputs_shapes3)
 
-    
+            inputs_ = []
+            for inp in inputs: 
+                diff2 = (inp.size(2) - target_shape2) // 2 
+                diff3 = (inp.size(3) - target_shape3) // 2 
+                inputs_.append(inp[:, :, diff2: diff2 + target_shape2, diff3:diff3 + target_shape3])
+
+        return torch.cat(inputs_, dim=self.dim)
+
 def my_unet():
     demo =  sk.Skip(num_input_channels=8,
             num_output_channels=1,
@@ -78,7 +73,7 @@ def my_unet():
     e,s,p = demo.construct()
     e[4].add_module("upsampling_2",nn.Upsample(scale_factor=2, mode="nearest"))
 
-    deeper = nn.Sequential(ConcatLayer(s[4],e[4]))
+    deeper = nn.Sequential(Concat(1,s[4],e[4]))
     ## add post-process layers
     for i in p[4]:
         deeper.add(i)
@@ -87,28 +82,28 @@ def my_unet():
     e[3].add_module("upsampling_2",nn.Upsample(scale_factor=2, mode="nearest"))
 
     model = None
-    deeper = nn.Sequential(ConcatLayer(s[3],e[3]))
+    deeper = nn.Sequential(Concat(1,s[3],e[3]))
     ## add post-process layers
     for i in p[3]:
         deeper.add(i)
     e[2].add_module("deeper_3",deeper)
     e[2].add_module("upsampling_2",nn.Upsample(scale_factor=2, mode="nearest"))
 
-    deeper = nn.Sequential(ConcatLayer(s[2],e[2]))
+    deeper = nn.Sequential(Concat(1,s[2],e[2]))
     ## add post-process layers
     for i in p[2]:
         deeper.add(i)
     e[1].add_module("deeper_3",deeper)
     e[1].add_module("upsampling_2",nn.Upsample(scale_factor=2, mode="nearest"))
 
-    deeper = nn.Sequential(ConcatLayer(s[1],e[1]))
+    deeper = nn.Sequential(Concat(1,s[1],e[1]))
     ## add post-process layers
     for i in p[1]:
         deeper.add(i)
     e[0].add_module("deeper_2",deeper)
     e[0].add_module("upsampling_1",nn.Upsample(scale_factor=2, mode="nearest"))
 
-    model = nn.Sequential(ConcatLayer(s[0],e[0]))
+    model = nn.Sequential(Concat(1,s[0],e[0]))
     ## add post-process layers
     for i in p[0]:
         model.add(i)
@@ -119,6 +114,20 @@ def my_unet():
     # ref.add_module("deeper_depth_2",deeper)
     return model
 
+def preprocess(path_to_image):
+    img = cv2.imread(path_to_image,cv2.IMREAD_UNCHANGED)
+    channel = img.shape[-1]
+    if (channel==1):
+        print('image in grayscale mode')
+        return Image.open(path_to_image)
+    elif (channel==3):
+        print("image in rgb mode")
+        x = cv2.cvtColor(img, cv2.COLOR_BGR2YCrCb)
+        y, cr, cb = cv2.split(x)
+        return [y,cr,cb]
+    else:
+        return None
+    
 # beginning running...
 ### get a list of files for levin_data_set
 def run(path_to_blur,path_to_save,epochs):
@@ -168,7 +177,10 @@ def run(path_to_blur,path_to_save,epochs):
         # set up device
         # read in every image
         device = torch.device("cuda:0")
-        im = Image.open(os.path.join(PATH,f))
+        im = preprocess(os.path.join(PATH,f))
+        if(isinstance(im, list)):
+            im,cr,cb = im
+        
         # convert from PIL to numpy
         pic = np.asarray(im)
         # convert from integers to floats
@@ -205,7 +217,7 @@ def run(path_to_blur,path_to_save,epochs):
 
         # optimizer and scheduler
         optimizer = torch.optim.Adam([{'params':model_x.parameters()},{'params':model_k.parameters(),'lr':1e-4}], lr=0.01)
-        scheduler = MultiStepLR(optimizer, milestones=[2000, 3000, 4000], gamma=0.5)  # learning rates
+        scheduler = MultiStepLR(optimizer, milestones=[700, 800, 900], gamma=0.5)  # learning rates
 
         # Losses
 
@@ -213,7 +225,7 @@ def run(path_to_blur,path_to_save,epochs):
         criterion = my_utils.ssim_loss
 
         loss, output_x,output_k = train_one_image(model_x, model_k, kernel_size, epochs, optimizer,scheduler, criterion,
-                        target, device, data_x, data_k,padh,padw,original_size,name_to_save)
+                        target, device, data_x, data_k)
 
         ## post-processing for saving image
         ### convert to numpy and delete first dimension
@@ -221,7 +233,20 @@ def run(path_to_blur,path_to_save,epochs):
         output_x = np.squeeze(output_x,0)
         output_x = np.moveaxis(output_x,0,2)
         output_x = output_x[padh//2:((padh//2)+original_size[1]), padw//2:((padw//2)+original_size[2])]
+        if ('cr' in locals()):
+            output_x = np.uint8(255 * output_x)
+            output_x = cv2.merge([output_x, cr, cb])
+            output_x = cv2.cvtColor(output_x, cv2.COLOR_YCrCb2RGB)
+            
         imsave(name_to_save,output_x)
+        torch.save(model_x.state_dict(),name_to_save+"_model_x.pt")
+        torch.save(model_k.state_dict(),name_to_save+"_model_k.pt")
+        torch.save(optimizer.state_dict(),name_to_save+"_optim.pt")
+        output_k = output_k.squeeze_()
+        output_k = output_k.detach().cpu().numpy()
+        imsave(name_to_save+'_kernel.png',output_k)
+        
+
 
 if __name__ == "__main__":
     import argparse
@@ -230,9 +255,9 @@ if __name__ == "__main__":
     parser.add_argument("--path_to_save", type=str, default="../levin_set/result", help='path to folder for saving')
     parser.add_argument("--epoch", type=int, default=1000, help='number of epochs')
     args = parser.parse_args()
-    epoch_folder = "no_tv_mse_"+str(args.epoch)
+    epoch_folder = "NO_tv_mse_"+str(args.epoch)
     run(args.path_to_blur,os.path.join(args.path_to_save,epoch_folder),args.epoch)
-#     epoch_folder = "tv_mse_"+str(args.epoch+1000)
-#     run(args.path_to_blur,os.path.join(args.path_to_save,epoch_folder),args.epoch+1000)
-#     epoch_folder = "tv_mse_"+str(args.epoch+2000)
-#     run(args.path_to_blur,os.path.join(args.path_to_save,epoch_folder),args.epoch+2000)
+    epoch_folder = "NO_tv_mse_"+str(args.epoch+1000)
+    run(args.path_to_blur,os.path.join(args.path_to_save,epoch_folder),args.epoch+1000)
+    epoch_folder = "NO_tv_mse_"+str(args.epoch+2000)
+    run(args.path_to_blur,os.path.join(args.path_to_save,epoch_folder),args.epoch+2000)

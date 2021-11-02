@@ -18,45 +18,40 @@ from PIL import Image
 import warnings
 from utils import utils as my_utils
 from network import fcn as my_fcn
-from trainer import train_one_image
+from trainer_alternating import train_one_image
 from network import skip as sk
 
 
-class ConcatLayer(nn.Module):
-    def __init__(self, *list_module):
-        super(ConcatLayer, self).__init__()
-        ## add module
-        for idx, module in enumerate(list_module):
+class Concat(nn.Module):
+    def __init__(self, dim, *args):
+        super(Concat, self).__init__()
+        self.dim = dim
+
+        for idx, module in enumerate(args):
             self.add_module(str(idx), module)
-            
+
     def forward(self, input):
-        ## output for each module
-        output = []
+        inputs = []
         for module in self._modules.values():
-            output.append(module(input))
+            inputs.append(module(input))
 
-        output_shape_2 = [x.shape[2] for x in output]
-        output_shape_3 = [x.shape[3] for x in output]
+        inputs_shapes2 = [x.shape[2] for x in inputs]
+        inputs_shapes3 = [x.shape[3] for x in inputs]        
 
-        ### check if all width and height are the same => no problem just cat
-        min_shape_2 = min(output_shape_2)
-        min_shape_3 = min(output_shape_3)
-
-        if np.all(np.array(output_shape_2) == min_shape_2) and np.all(np.array(output_shape_3) == min_shape_3):
-            result = output
-
+        if np.all(np.array(inputs_shapes2) == min(inputs_shapes2)) and np.all(np.array(inputs_shapes3) == min(inputs_shapes3)):
+            inputs_ = inputs
         else:
-            result = []
-            ## shape no match
-            #### get equal center of each feature map
-            for out in output: 
-                begin_height = (out.size(2) - min_shape_2) // 2 
-                begin_width = (out.size(3) - min_shape_3) // 2 
-                result.append(out[:, :, begin_height: begin_height + min_shape_2, begin_width:begin_width + min_shape_3])
-        return torch.cat(result, dim=1)
-            
+            target_shape2 = min(inputs_shapes2)
+            target_shape3 = min(inputs_shapes3)
 
-    
+            inputs_ = []
+            for inp in inputs: 
+                diff2 = (inp.size(2) - target_shape2) // 2 
+                diff3 = (inp.size(3) - target_shape3) // 2 
+                inputs_.append(inp[:, :, diff2: diff2 + target_shape2, diff3:diff3 + target_shape3])
+
+        return torch.cat(inputs_, dim=self.dim)
+
 def my_unet():
     demo =  sk.Skip(num_input_channels=8,
             num_output_channels=1,
@@ -78,7 +73,7 @@ def my_unet():
     e,s,p = demo.construct()
     e[4].add_module("upsampling_2",nn.Upsample(scale_factor=2, mode="nearest"))
 
-    deeper = nn.Sequential(ConcatLayer(s[4],e[4]))
+    deeper = nn.Sequential(Concat(1,s[4],e[4]))
     ## add post-process layers
     for i in p[4]:
         deeper.add(i)
@@ -87,28 +82,28 @@ def my_unet():
     e[3].add_module("upsampling_2",nn.Upsample(scale_factor=2, mode="nearest"))
 
     model = None
-    deeper = nn.Sequential(ConcatLayer(s[3],e[3]))
+    deeper = nn.Sequential(Concat(1,s[3],e[3]))
     ## add post-process layers
     for i in p[3]:
         deeper.add(i)
     e[2].add_module("deeper_3",deeper)
     e[2].add_module("upsampling_2",nn.Upsample(scale_factor=2, mode="nearest"))
 
-    deeper = nn.Sequential(ConcatLayer(s[2],e[2]))
+    deeper = nn.Sequential(Concat(1,s[2],e[2]))
     ## add post-process layers
     for i in p[2]:
         deeper.add(i)
     e[1].add_module("deeper_3",deeper)
     e[1].add_module("upsampling_2",nn.Upsample(scale_factor=2, mode="nearest"))
 
-    deeper = nn.Sequential(ConcatLayer(s[1],e[1]))
+    deeper = nn.Sequential(Concat(1,s[1],e[1]))
     ## add post-process layers
     for i in p[1]:
         deeper.add(i)
     e[0].add_module("deeper_2",deeper)
     e[0].add_module("upsampling_1",nn.Upsample(scale_factor=2, mode="nearest"))
 
-    model = nn.Sequential(ConcatLayer(s[0],e[0]))
+    model = nn.Sequential(Concat(1,s[0],e[0]))
     ## add post-process layers
     for i in p[0]:
         model.add(i)
@@ -213,7 +208,7 @@ def run(path_to_blur,path_to_save,epochs):
         criterion = my_utils.ssim_loss
 
         loss, output_x,output_k = train_one_image(model_x, model_k, kernel_size, epochs, optimizer,scheduler, criterion,
-                        target, device, data_x, data_k,padh,padw,original_size,name_to_save)
+                        target, device, data_x, data_k)
 
         ## post-processing for saving image
         ### convert to numpy and delete first dimension
@@ -230,7 +225,7 @@ if __name__ == "__main__":
     parser.add_argument("--path_to_save", type=str, default="../levin_set/result", help='path to folder for saving')
     parser.add_argument("--epoch", type=int, default=1000, help='number of epochs')
     args = parser.parse_args()
-    epoch_folder = "no_tv_mse_"+str(args.epoch)
+    epoch_folder = "alt_tv_mse_"+str(args.epoch)
     run(args.path_to_blur,os.path.join(args.path_to_save,epoch_folder),args.epoch)
 #     epoch_folder = "tv_mse_"+str(args.epoch+1000)
 #     run(args.path_to_blur,os.path.join(args.path_to_save,epoch_folder),args.epoch+1000)

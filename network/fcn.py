@@ -9,8 +9,9 @@ class kernel_approximation():
         model.add_module("Linear_first",
                          nn.Linear(num_input_channels, num_hidden, bias=True))
         model.add_module("activation", nn.ReLU6())
-        model.add_module("Probability linear",
-                         nn.Linear(num_hidden, num_output_channels))
+        model.add_module("Linear_second",
+                         nn.Linear(num_hidden, num_output_channels, bias=True))
+        model.add_module("activation_2", nn.ReLU6())
         model.add_module("prob activation", nn.Softmax())
         self.model = model
 
