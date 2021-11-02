@@ -1,0 +1,18 @@
+wget http://www.fit.vutbr.cz/~ihradis/CNN-Deblur/BMVC_large_patches.tar.aa
+wget http://www.fit.vutbr.cz/~ihradis/CNN-Deblur/BMVC_large_patches.tar.ab
+wget http://www.fit.vutbr.cz/~ihradis/CNN-Deblur/BMVC_large_patches.tar.ac
+wget http://www.fit.vutbr.cz/~ihradis/CNN-Deblur/BMVC_large_patches.tar.ad
+wget http://www.fit.vutbr.cz/~ihradis/CNN-Deblur/BMVC_large_patches.tar.ae
+wget http://www.fit.vutbr.cz/~ihradis/CNN-Deblur/BMVC_large_patches.tar.af
+wget http://www.fit.vutbr.cz/~ihradis/CNN-Deblur/BMVC_large_patches.tar.ag
+wget http://www.fit.vutbr.cz/~ihradis/CNN-Deblur/BMVC_large_patches.tar.ah
+wget http://www.fit.vutbr.cz/~ihradis/CNN-Deblur/BMVC_large_patches.tar.ai
+wget http://www.fit.vutbr.cz/~ihradis/CNN-Deblur/BMVC_large_patches.tar.aj
+wget http://www.fit.vutbr.cz/~ihradis/CNN-Deblur/BMVC_large_patches.tar.ak
+wget http://www.fit.vutbr.cz/~ihradis/CNN-Deblur/BMVC_large_patches.tar.al
+wget http://www.fit.vutbr.cz/~ihradis/CNN-Deblur/BMVC_large_patches.tar.am
+wget http://www.fit.vutbr.cz/~ihradis/CNN-Deblur/BMVC_large_patches.tar.an
+wget http://www.fit.vutbr.cz/~ihradis/CNN-Deblur/BMVC_large_patches.tar.ao
+wget http://www.fit.vutbr.cz/~ihradis/CNN-Deblur/BMVC_large_patches.tar.ap
+wget http://www.fit.vutbr.cz/~ihradis/CNN-Deblur/BMVC_large_patches.tar.aq
+cat BMVC_large_patches.tar.* | tar x
