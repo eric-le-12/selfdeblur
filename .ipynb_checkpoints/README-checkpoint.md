@@ -44,6 +44,7 @@ For levin dataset: remember to edit path to groundtruth files on line 5, path to
 
 For lai dataset: edit path to ground-truth 4,5,21 to update path to other works, path to gt and path to results
 
+## Useful link
 
 
-
+Author repo : https://github.com/csdwren/SelfDeblur
