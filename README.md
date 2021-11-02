@@ -46,7 +46,7 @@ For evaluation on Lai and Levin dataset please run the corresponding Matlab file
 
 For levin dataset: remember to edit path to groundtruth files on line 5, path to deblured results on line 13, and path to other works on line 4
 
-For lai dataset: edit path to ground-truth 4,5,21 to update path to other works, path to gt and path to results
+For lai dataset: edit line 4,5,21 to update path to other works, path to gt and path to results
 
 ## Useful link
 
