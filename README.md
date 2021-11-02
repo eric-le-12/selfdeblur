@@ -1,6 +1,7 @@
 # Selfdeblur
 This repo containing for reconstructing selfdeblur model
 
+
 # Usage
 Kindly run "run.py" for debluring on GrayScale images (Lai dataset)
 
@@ -20,6 +21,9 @@ All of these 3 files shared the same parameters:
 "--epoch", type=int - number of epochs for deblurring EACH file.
 
 Example: python run.py --epoch 5000 --path_to_blur ../dataset/levin/blur --path_to_save ../dataset/levin/result
+
+### note: you have to create the folder you mentioned in --path_to_save, if not, results wont be saved 
+
 
 ## model reconstruction:
 
@@ -48,3 +52,14 @@ For lai dataset: edit path to ground-truth 4,5,21 to update path to other works,
 
 
 Author repo : https://github.com/csdwren/SelfDeblur
+
+
+# What is different? (Between our implementation and author's implementation)
+
+- Loss function : The author did not implement Total variation loss
+
+- Modularity: The architecture of the Encoder-Decoder model of our implementation is splited into 3 modules for every layer at depth i: skip block, encoder block and the post-processing block. While the author simple implemeted them in a very complicated loop - what we found uncomfortable
+
+- We provided the code for alternating optimization strategy (the author's repo did not)
+
+- We provided code for using bayesian instead of MAP (for more details, visit our report)
