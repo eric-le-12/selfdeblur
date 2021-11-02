@@ -213,7 +213,7 @@ def run(path_to_blur,path_to_save,epochs):
         criterion = my_utils.ssim_loss
 
         loss, output_x,output_k = train_one_image(model_x, model_k, kernel_size, epochs, optimizer,scheduler, criterion,
-                        target, device, data_x, data_k,padh,padw,original_size,name_to_save)
+                        target, device, data_x, data_k)
 
         ## post-processing for saving image
         ### convert to numpy and delete first dimension
@@ -232,7 +232,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
     epoch_folder = "no_tv_mse_"+str(args.epoch)
     run(args.path_to_blur,os.path.join(args.path_to_save,epoch_folder),args.epoch)
-#     epoch_folder = "tv_mse_"+str(args.epoch+1000)
-#     run(args.path_to_blur,os.path.join(args.path_to_save,epoch_folder),args.epoch+1000)
-#     epoch_folder = "tv_mse_"+str(args.epoch+2000)
-#     run(args.path_to_blur,os.path.join(args.path_to_save,epoch_folder),args.epoch+2000)
