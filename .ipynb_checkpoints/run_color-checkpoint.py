@@ -256,8 +256,5 @@ if __name__ == "__main__":
     parser.add_argument("--epoch", type=int, default=1000, help='number of epochs')
     args = parser.parse_args()
     epoch_folder = "NO_tv_mse_"+str(args.epoch)
-    run(args.path_to_blur,os.path.join(args.path_to_save,epoch_folder),args.epoch)
-    epoch_folder = "NO_tv_mse_"+str(args.epoch+1000)
-    run(args.path_to_blur,os.path.join(args.path_to_save,epoch_folder),args.epoch+1000)
-    epoch_folder = "NO_tv_mse_"+str(args.epoch+2000)
-    run(args.path_to_blur,os.path.join(args.path_to_save,epoch_folder),args.epoch+2000)
+    run(args.path_to_blur,args.path_to_save,args.epoch)
+
