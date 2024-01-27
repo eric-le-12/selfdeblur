@@ -164,6 +164,8 @@ def run(path_to_blur,path_to_save,epochs):
             kernel_size = [55, 55]
         if imgname.find('kernel_04') != -1:
             kernel_size = [75, 75]
+        else:
+            kernel_size = [13, 13]
 
         # set up device
         # read in every image
@@ -221,6 +223,7 @@ def run(path_to_blur,path_to_save,epochs):
         output_x = np.squeeze(output_x,0)
         output_x = np.moveaxis(output_x,0,2)
         output_x = output_x[padh//2:((padh//2)+original_size[1]), padw//2:((padw//2)+original_size[2])]
+        output_x = (np.squeeze(output_x,2)*255).astype(np.uint8)
         imsave(name_to_save,output_x)
 
 if __name__ == "__main__":
